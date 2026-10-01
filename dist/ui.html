@@ -791,6 +791,10 @@ import { cartesian as sharedCartesian, zip as sharedZip } from './iterate.js';
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  function shellQuote(s) {
+    return /^[A-Za-z0-9_@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`;
+  }
+
   function insertAtCursor(text) {
     const start = tmpl.selectionStart;
     const end = tmpl.selectionEnd;
@@ -876,12 +880,12 @@ import { cartesian as sharedCartesian, zip as sharedZip } from './iterate.js';
     let cli = 'promptargs';
     const hasInline = !text.includes('\n') && text.length < 200;
     if (hasInline) {
-      cli += ` "${text.replace(/"/g, '\\"')}"`;
+      cli += ` ${shellQuote(text)}`;
     }
     for (const row of rows) {
       if (!row.values) continue;
       const prefix = row.source === 'file' ? '@' : '';
-      const val = row.source === 'glob' ? `"${row.values}"` : `${prefix}${row.values}`;
+      const val = row.source === 'glob' ? `"${row.values}"` : shellQuote(`${prefix}${row.values}`);
       cli += ` --${row.name}=${val}`;
     }
     if (mode === 'cross' && arrayVars.length > 1) {

@@ -85,7 +85,7 @@ function makeHarness(mode: 'zip' | 'cross' = 'zip'): Harness {
     },
   };
 
-  const src = ['getRowData', 'splitValues', 'escHtml', 'highlightUnfilled', 'update']
+  const src = ['getRowData', 'splitValues', 'escHtml', 'shellQuote', 'highlightUnfilled', 'update']
     .map(extractFunction)
     .join('\n');
   // eslint-disable-next-line no-new-func
@@ -136,7 +136,7 @@ test('update expands scalar values into a single unlabeled result', () => {
   assert.equal(h.iterations(), 1);
   assert.ok(!h.previewBody.innerHTML.includes('iter-label'), 'single results carry no [i/n] label');
   assert.deepEqual(expandedTexts(h), ['Review api.go for security']);
-  assert.equal(h.cli(), 'promptargs "Review {{file}} for {{focus=correctness}}" --file=api.go --focus=security');
+  assert.equal(h.cli(), "promptargs 'Review {{file}} for {{focus=correctness}}' --file=api.go --focus=security");
 });
 
 test('update zips arrays 1:1 and labels each iteration', () => {
@@ -148,7 +148,7 @@ test('update zips arrays 1:1 and labels each iteration', () => {
   assert.deepEqual(expandedTexts(h), ['a.go:x', 'b.go:y']);
   assert.match(h.previewBody.innerHTML, /<div class="iter-label">\[1\/2\] file=a\.go {2}focus=x<\/div>/);
   assert.match(h.previewBody.innerHTML, /<div class="iter-label">\[2\/2\] file=b\.go {2}focus=y<\/div>/);
-  assert.equal(h.cli(), 'promptargs "{{file}}:{{focus}}" --file=a.go,b.go --focus=x,y');
+  assert.equal(h.cli(), "promptargs '{{file}}:{{focus}}' --file=a.go,b.go --focus=x,y");
 });
 
 test('update in cross mode renders every combination and appends --cross', () => {
@@ -158,7 +158,7 @@ test('update in cross mode renders every combination and appends --cross', () =>
   h.update();
   assert.equal(h.previewCount.textContent, '4 results');
   assert.deepEqual(expandedTexts(h), ['a.go:x', 'a.go:y', 'b.go:x', 'b.go:y']);
-  assert.equal(h.cli(), 'promptargs "{{file}}:{{focus}}" --file=a.go,b.go --focus=x,y --cross');
+  assert.equal(h.cli(), "promptargs '{{file}}:{{focus}}' --file=a.go,b.go --focus=x,y --cross");
 });
 
 test('update omits --cross when fewer than two arrays exist, matching CLI semantics', () => {
@@ -193,7 +193,7 @@ test('update treats @file sources as one opaque value and quotes glob sources', 
   assert.equal(h.previewCount.textContent, '1 result');
   assert.deepEqual(expandedTexts(h), ['Check list.txt and src/*.go']);
   // ...while the command hands them to the CLI in the syntax `promptargs help` documents.
-  assert.equal(h.cli(), 'promptargs "Check {{file}} and {{src}}" --file=@list.txt --src="src/*.go"');
+  assert.equal(h.cli(), "promptargs 'Check {{file}} and {{src}}' --file=@list.txt --src=\"src/*.go\"");
 });
 
 test('update does not split a comma-containing @file value into an array', () => {
@@ -212,7 +212,7 @@ test('update skips rows with empty values in the command but still previews defa
   h.rows.push({ name: 'tone', values: '' }, { name: 'file', values: 'a.go' });
   h.update();
   assert.deepEqual(expandedTexts(h), ['Be concise about a.go']);
-  assert.equal(h.cli(), 'promptargs "Be {{tone=concise}} about {{file}}" --file=a.go');
+  assert.equal(h.cli(), "promptargs 'Be {{tone=concise}} about {{file}}' --file=a.go");
 });
 
 test('update highlights variables that remain unfilled after expansion', () => {
@@ -233,7 +233,7 @@ test('update HTML-escapes template text, values, and labels before rendering', (
   assert.ok(!html.includes('<b>'), 'raw template markup must not reach the preview');
   assert.match(html, /&lt;b&gt;&lt;img src=x onerror=alert\(1\)&gt;&lt;\/b&gt; &amp; a/);
   assert.match(html, /iter-label">\[1\/2\] x=&lt;img src=x onerror=alert\(1\)&gt; {2}y=a</);
-  assert.match(h.cliText.innerHTML, /--x=&lt;img src=x onerror=alert\(1\)&gt;,ok/);
+  assert.match(h.cliText.innerHTML, /--x='&lt;img src=x onerror=alert\(1\)&gt;,ok'/);
 });
 
 test('update inlines the template in the command only when it is short and single-line', () => {
@@ -241,7 +241,7 @@ test('update inlines the template in the command only when it is short and singl
   inline.tmpl.value = 'Say "hi" to {{name}}';
   inline.rows.push({ name: 'name', values: 'World' });
   inline.update();
-  assert.equal(inline.cli(), 'promptargs "Say \\"hi\\" to {{name}}" --name=World');
+  assert.equal(inline.cli(), "promptargs 'Say \"hi\" to {{name}}' --name=World");
 
   const multiline = makeHarness();
   multiline.tmpl.value = 'Line one {{name}}\nLine two';
@@ -263,7 +263,16 @@ test('update ignores rows without a name', () => {
   h.rows.push({ name: '  ', values: 'orphan' }, { name: 'name', values: 'World' });
   h.update();
   assert.deepEqual(expandedTexts(h), ['Hello World']);
-  assert.equal(h.cli(), 'promptargs "Hello {{name}}" --name=World');
+  assert.equal(h.cli(), "promptargs 'Hello {{name}}' --name=World");
+});
+
+test('update shell-quotes shell metacharacters in templates and values', () => {
+  const h = makeHarness();
+  h.tmpl.value = 'Show $HOME and `whoami` to {{audience}}';
+  h.rows.push({ name: 'audience', values: "O'Reilly & junior developers" });
+  h.update();
+  assert.ok(h.cli().startsWith("promptargs 'Show $HOME and `whoami` to {{audience}}' "));
+  assert.ok(h.cli().includes("--audience='O'\\''Reilly &amp; junior developers'"));
 });
 
 // --- PRESETS -----------------------------------------------------------------
@@ -287,6 +296,25 @@ function extractPresets(): Preset[] {
 }
 
 const presets = extractPresets();
+
+test('shipped presets quote their multi-word values in the generated command', () => {
+  for (const name of ['explain', 'fix']) {
+    const preset = presets.find(p => p.name === name);
+    assert.ok(preset, `preset ${name} exists`);
+    const h = makeHarness(preset.mode);
+    h.tmpl.value = preset.template;
+    for (const [key, values] of Object.entries(preset.vars)) {
+      h.rows.push({ name: key, values });
+    }
+    h.update();
+    if (name === 'explain') {
+      assert.match(h.cli(), /--audience='junior developer'/);
+    } else {
+      assert.match(h.cli(), /--expected='returns user object'/);
+      assert.match(h.cli(), /--actual='crashes on line 42'/);
+    }
+  }
+});
 
 test('every preset fills each template variable and uses a known iteration mode', () => {
   assert.ok(presets.length >= 8, `expected the shipped preset catalogue, got ${presets.length}`);

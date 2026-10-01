@@ -1,0 +1,1 @@
+- Quote generated builder commands so multi-word values and shell metacharacters reach the CLI unchanged.
